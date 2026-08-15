@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#111827" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="SmoothRoute Test" />
+<title>SmoothRoute Friend Test</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;background:#0b1020;color:#fff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(#0b1020,#111827);padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+main{max-width:620px;margin:auto;padding:18px 0 30px}.brand{font-weight:800;font-size:26px;letter-spacing:-.5px}.sub{color:#aab4c8;margin:4px 0 18px}
+.card{background:#151d30;border:1px solid #25304a;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+label{display:block;color:#cbd5e1;font-size:13px;margin:10px 0 7px}.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+button,select,input{width:100%;border:0;border-radius:14px;padding:14px 12px;font-size:16px;font-weight:700;background:#25304a;color:white}
+select,input{font-weight:600;border:1px solid #334155;background:#0f172a}
+button.sel{background:#2563eb}button.start{background:#16a34a;font-size:20px;padding:18px}button.stop{background:#dc2626;font-size:20px;padding:18px}button.secondary{background:#334155}.hidden{display:none!important}
+.status{font-size:15px;line-height:1.5}.ok{color:#86efac}.warn{color:#fde68a}.bad{color:#fca5a5}.big{font-size:42px;font-weight:800;line-height:1}.muted{color:#94a3b8;font-size:13px;line-height:1.45}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:#0f172a;border-radius:14px;padding:12px}.stat b{display:block;font-size:22px;margin-top:4px}
+.pill{display:inline-block;border-radius:999px;padding:5px 9px;background:#1f2937;color:#cbd5e1;font-size:12px;margin:3px 4px 3px 0}.footer{color:#64748b;text-align:center;font-size:12px;margin-top:18px}
+.notice{background:#0f172a;border-radius:14px;padding:12px;margin-top:10px;border:1px solid #25304a}
+</style>
+</head>
+<body><main>
+<div class="brand">SmoothRoute Friend Test</div>
+<div class="sub">Bay Area road-surface data collection</div>
+
+<div id="setup" class="card">
+  <div class="notice">
+    <b>Before you start</b>
+    <div class="muted">This test records GPS location, speed, and phone motion while recording. Start and stop only while parked. Keep the phone secured and do not interact with it while driving.</div>
+  </div>
+
+  <label>Vehicle</label>
+  <div class="seg">
+    <button data-profile="car" class="sel">Car</button>
+    <button data-profile="motorcycle">Motorcycle</button>
+    <button data-profile="scooter">Scooter</button>
+  </div>
+
+  <label>Travel area</label>
+  <select id="area">
+    <option value="us101_bay_area">US-101 Bay Area</option>
+    <option value="san_jose">San Jose</option>
+    <option value="south_san_francisco">South San Francisco</option>
+    <option value="san_francisco">San Francisco</option>
+    <option value="peninsula">Peninsula / US-101 corridor</option>
+    <option value="other_bay_area">Other Bay Area</option>
+  </select>
+
+  <label>Trip label (optional)</label>
+  <input id="tripLabel" maxlength="40" placeholder="Example: commute northbound" />
+
+  <label>Tester nickname (optional)</label>
+  <input id="tester" maxlength="30" placeholder="Example: Mike" />
+
+  <button id="start" class="start">Start Test Drive</button>
+  <p class="muted">For more reliable sensor capture on iPhone, keep this page open and the screen on for the test.</p>
+</div>
+
+<div id="live" class="card hidden">
+  <div class="status"><span class="ok">● Recording</span> <span id="clock" class="pill">00:00</span></div>
+  <div class="grid" style="margin-top:12px">
+    <div class="stat">GPS<b id="gps">Waiting</b></div>
+    <div class="stat">Motion<b id="motion">Waiting</b></div>
+    <div class="stat">Samples<b id="count">0</b></div>
+    <div class="stat">Speed<b id="speed">—</b></div>
+  </div>
+  <p class="muted">Keep the phone secured. Do not interact with the phone while the vehicle is moving.</p>
+  <button id="stop" class="stop">End Test Drive</button>
+</div>
+
+<div id="done" class="card hidden">
+  <div class="big">Saved</div>
+  <p id="summary" class="status"></p>
+  <button id="share" class="secondary">Share / Save Test File</button>
+  <a id="download" class="hidden" download="smoothroute-friend-test.json">Download test file</a>
+  <p class="muted">Send the saved JSON file to the SmoothRoute project owner. The file contains the GPS path and motion samples from this test.</p>
+  <button id="again">Record Another Test</button>
+</div>
+
+<div class="footer">SmoothRoute experimental field collector · Drive normally; never seek out rough roads or hazards.</div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let profile='car',ride=null,samples=[],watchId=null,motionHandler=null,timer=null,wakeLock=null,lastMotion=0,latestGps=null,exportFile=null,startedMs=0,gpsCount=0,motionCount=0;
+
+for(const b of document.querySelectorAll('[data-profile]')) b.onclick=()=>{
+  profile=b.dataset.profile;
+  document.querySelectorAll('[data-profile]').forEach(x=>x.classList.toggle('sel',x===b));
+};
+
+async function wake(){
+  try{
+    if('wakeLock' in navigator) wakeLock=await navigator.wakeLock.request('screen');
+  }catch(e){}
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&ride) wake();
+});
+
+function elapsed(ms){
+  const s=Math.floor(ms/1000),m=Math.floor(s/60);
+  return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+}
+
+async function motionPermission(){
+  if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+    return (await DeviceMotionEvent.requestPermission())==='granted';
+  }
+  return true;
+}
+
+function addGps(p){
+  latestGps={
+    lat:p.coords.latitude,
+    lon:p.coords.longitude,
+    accuracy:p.coords.accuracy,
+    speed:p.coords.speed,
+    heading:p.coords.heading,
+    altitude:p.coords.altitude,
+    ts:p.timestamp
+  };
+  $('gps').textContent=Math.round(p.coords.accuracy||0)+' m';
+  $('speed').textContent=p.coords.speed==null?'—':Math.round(p.coords.speed*2.23694)+' mph';
+  samples.push({type:'gps',...latestGps});
+  gpsCount++;
+  $('count').textContent=samples.length;
+}
+
+function addMotion(e){
+  const now=Date.now();
+  if(now-lastMotion<100) return;
+  lastMotion=now;
+  const a=e.accelerationIncludingGravity||e.acceleration||{};
+  const r=e.rotationRate||{};
+  samples.push({
+    type:'motion',
+    ts:now,
+    ax:a.x??null,
+    ay:a.y??null,
+    az:a.z??null,
+    alpha:r.alpha??null,
+    beta:r.beta??null,
+    gamma:r.gamma??null,
+    gps:latestGps
+  });
+  motionCount++;
+  $('motion').textContent='Active';
+  $('count').textContent=samples.length;
+}
+
+$('start').onclick=async()=>{
+  try{
+    $('start').disabled=true;
+    $('start').textContent='Requesting permissions…';
+
+    if(!navigator.geolocation) throw new Error('Location is not available on this device.');
+
+    const ok=await motionPermission();
+    if(!ok) throw new Error('Motion permission was not granted.');
+
+    samples=[];
+    latestGps=null;
+    gpsCount=0;
+    motionCount=0;
+    lastMotion=0;
+    startedMs=Date.now();
+
+    ride={
+      version:'smoothroute-friend-test-0.1',
+      id:'friend-'+startedMs,
+      collection_mode:'friend_test',
+      profile,
+      area:$('area').value,
+      trip_label:$('tripLabel').value.trim()||null,
+      tester:$('tester').value.trim()||null,
+      started_at:new Date(startedMs).toISOString(),
+      user_agent:navigator.userAgent
+    };
+
+    await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(
+      p=>{addGps(p);res();},
+      rej,
+      {enableHighAccuracy:true,timeout:15000,maximumAge:0}
+    ));
+
+    watchId=navigator.geolocation.watchPosition(
+      addGps,
+      ()=>{$('gps').textContent='Error';},
+      {enableHighAccuracy:true,maximumAge:0,timeout:15000}
+    );
+
+    motionHandler=addMotion;
+    window.addEventListener('devicemotion',motionHandler,{passive:true});
+    await wake();
+
+    $('setup').classList.add('hidden');
+    $('live').classList.remove('hidden');
+    timer=setInterval(()=>$('clock').textContent=elapsed(Date.now()-startedMs),1000);
+
+  }catch(e){
+    ride=null;
+    alert(e.message||String(e));
+    $('start').disabled=false;
+    $('start').textContent='Start Test Drive';
+  }
+};
+
+$('stop').onclick=async()=>{
+  if(!ride) return;
+
+  if(watchId!==null) navigator.geolocation.clearWatch(watchId);
+  watchId=null;
+
+  if(motionHandler) window.removeEventListener('devicemotion',motionHandler);
+  motionHandler=null;
+
+  if(timer) clearInterval(timer);
+  timer=null;
+
+  try{await wakeLock?.release()}catch(e){}
+  wakeLock=null;
+
+  const endedMs=Date.now();
+  ride.ended_at=new Date(endedMs).toISOString();
+  ride.duration_seconds=Math.max(0,Math.round((endedMs-startedMs)/1000));
+  ride.sample_count=samples.length;
+  ride.gps_sample_count=gpsCount;
+  ride.motion_sample_count=motionCount;
+
+  const payload={ride,samples};
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+  const area=ride.area.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase();
+  const name=`smoothroute-friend-${profile}-${area}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+
+  exportFile=new File([blob],name,{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  $('download').href=url;
+  $('download').download=name;
+
+  $('live').classList.add('hidden');
+  $('done').classList.remove('hidden');
+  $('summary').innerHTML=
+    `Vehicle: <b>${profile}</b><br>`+
+    `Area: <b>${ride.area.replaceAll('_',' ')}</b><br>`+
+    `Duration: <b>${elapsed(ride.duration_seconds*1000)}</b><br>`+
+    `GPS samples: <b>${gpsCount.toLocaleString()}</b><br>`+
+    `Motion samples: <b>${motionCount.toLocaleString()}</b><br>`+
+    `Total samples: <b>${samples.length.toLocaleString()}</b>`;
+};
+
+$('share').onclick=async()=>{
+  if(exportFile&&navigator.canShare?.({files:[exportFile]})){
+    try{
+      await navigator.share({title:'SmoothRoute friend test',files:[exportFile]});
+      return;
+    }catch(e){
+      if(e?.name==='AbortError') return;
+    }
+  }
+  $('download').classList.remove('hidden');
+  $('download').click();
+};
+
+$('again').onclick=()=>location.reload();
+</script>
+</body>
+</html>
