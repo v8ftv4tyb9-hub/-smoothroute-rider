@@ -14,31 +14,42 @@
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(#0b1020,#111827);padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
 main{max-width:620px;margin:auto;padding:18px 0 30px}.brand{font-weight:800;font-size:26px;letter-spacing:-.5px}.sub{color:#aab4c8;margin:4px 0 18px}
 .card{background:#151d30;border:1px solid #25304a;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 8px 30px rgba(0,0,0,.18)}
-label{display:block;color:#cbd5e1;font-size:13px;margin:10px 0 7px}.seg3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+label{display:block;color:#cbd5e1;font-size:13px;margin:10px 0 7px}
 button,select,input{width:100%;border:0;border-radius:14px;padding:14px 12px;font-size:16px;font-weight:700;background:#25304a;color:white}
 select,input{font-weight:600;border:1px solid #334155;background:#0f172a}
-button.sel{background:#2563eb}button.start{background:#16a34a;font-size:20px;padding:18px}button.stop{background:#dc2626;font-size:20px;padding:18px}button.secondary{background:#334155}.hidden{display:none!important}
+button.start{background:#16a34a;font-size:20px;padding:18px}button.stop{background:#dc2626;font-size:20px;padding:18px}button.secondary{background:#334155}.hidden{display:none!important}
 .status{font-size:15px;line-height:1.5}.ok{color:#86efac}.big{font-size:42px;font-weight:800;line-height:1}.muted{color:#94a3b8;font-size:13px;line-height:1.45}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:#0f172a;border-radius:14px;padding:12px}.stat b{display:block;font-size:22px;margin-top:4px}
 .pill{display:inline-block;border-radius:999px;padding:5px 9px;background:#1f2937;color:#cbd5e1;font-size:12px;margin:3px 4px 3px 0}a{color:#93c5fd}.footer{color:#64748b;text-align:center;font-size:12px;margin-top:18px}
-.notice{background:#0f172a;border-radius:14px;padding:12px;margin-top:10px;border:1px solid #25304a}
+.notice,.vehicle{background:#0f172a;border-radius:14px;padding:12px;margin-top:10px;border:1px solid #25304a}.vehicle strong{display:block;font-size:17px;margin-bottom:4px}.vehicle .row{margin-top:7px}.tag{display:inline-block;padding:4px 8px;border-radius:999px;background:#1f2937;color:#cbd5e1;font-size:12px;margin:2px 4px 2px 0}
 </style>
 </head>
 <body><main>
 <div class="brand">SmoothRoute Ride</div>
-<div class="sub">Any-trip motorcycle, scooter & car road-surface recorder</div>
+<div class="sub">Any-trip road-surface recorder</div>
 
 <div id="setup" class="card">
   <div class="notice">
-    <b>Ride anywhere</b>
-    <div class="muted">Record any trip you make. SmoothRoute saves GPS, speed, and phone motion so repeated trips can build a road-surface dataset.</div>
+    <b>My motorcycle profile</b>
+    <div class="muted">Every ride is tagged with the exact bike and suspension setup so SmoothRoute can later compare road impacts across different vehicles.</div>
   </div>
 
-  <label>Vehicle</label>
-  <div class="seg3">
-    <button data-profile="motorcycle" class="sel">Motorcycle</button>
-    <button data-profile="scooter">Scooter</button>
-    <button data-profile="car">Car</button>
+  <div class="vehicle">
+    <strong>2021 Harley-Davidson Road Glide Special</strong>
+    <div class="row"><span class="tag">Motorcycle</span><span class="tag">Stock wheels</span><span class="tag">Modified suspension</span></div>
+    <div class="muted" style="margin-top:8px">
+      Front: Big Bear Performance / Öhlins<br>
+      Rear: Screamin' Eagle / Öhlins
+    </div>
   </div>
+
+  <label>Load state</label>
+  <select id="loadState">
+    <option value="solo">Solo rider</option>
+    <option value="solo_luggage">Solo + luggage</option>
+    <option value="passenger">Rider + passenger</option>
+    <option value="passenger_luggage">Rider + passenger + luggage</option>
+    <option value="other">Other</option>
+  </select>
 
   <label>Trip area</label>
   <select id="area">
@@ -59,7 +70,7 @@ button.sel{background:#2563eb}button.start{background:#16a34a;font-size:20px;pad
 </div>
 
 <div id="live" class="card hidden">
-  <div class="status"><span id="rec" class="ok">● Recording</span> <span id="clock" class="pill">00:00</span></div>
+  <div class="status"><span class="ok">● Recording</span> <span id="clock" class="pill">00:00</span></div>
   <div class="grid" style="margin-top:12px">
     <div class="stat">GPS<b id="gps">Waiting</b></div>
     <div class="stat">Motion<b id="motion">Waiting</b></div>
@@ -75,7 +86,7 @@ button.sel{background:#2563eb}button.start{background:#16a34a;font-size:20px;pad
   <p id="summary" class="status"></p>
   <button id="share" class="secondary">Share / Save Ride File</button>
   <a id="download" class="hidden" download="smoothroute-ride.json">Download ride file</a>
-  <p class="muted">Save the JSON after each ride. It contains the GPS path and motion samples used for SmoothRoute road-surface analysis.</p>
+  <p class="muted">Save the JSON after each ride. It contains the vehicle profile, GPS path, speed and motion samples used for SmoothRoute road-surface analysis.</p>
   <button id="again">Record Another Ride</button>
 </div>
 
@@ -84,13 +95,33 @@ button.sel{background:#2563eb}button.start{background:#16a34a;font-size:20px;pad
 
 <script>
 const $=id=>document.getElementById(id);
-let profile='motorcycle';
-let ride=null,samples=[],watchId=null,motionHandler=null,timer=null,wakeLock=null,lastMotion=0,latestGps=null,exportFile=null,startedMs=0,gpsCount=0,motionCount=0;
 
-for(const b of document.querySelectorAll('[data-profile]')) b.onclick=()=>{
-  profile=b.dataset.profile;
-  document.querySelectorAll('[data-profile]').forEach(x=>x.classList.toggle('sel',x===b));
+const VEHICLE_PROFILE={
+  profile_id:'harley_road_glide_special_2021_user_01',
+  vehicle_class:'motorcycle',
+  year:2021,
+  make:'Harley-Davidson',
+  model:'Road Glide Special',
+  wheels:{
+    configuration:'stock',
+    notes:'Stock wheel configuration; exact tire specification can be added after verification.'
+  },
+  suspension:{
+    configuration:'modified',
+    front:{
+      brand:'Öhlins',
+      supplier_installer:'Big Bear Performance',
+      description:'Big Bear Performance / Öhlins front suspension'
+    },
+    rear:{
+      brand:'Öhlins',
+      product_family:"Screamin' Eagle",
+      description:"Screamin' Eagle / Öhlins rear suspension"
+    }
+  }
 };
+
+let ride=null,samples=[],watchId=null,motionHandler=null,timer=null,wakeLock=null,lastMotion=0,latestGps=null,exportFile=null,startedMs=0,gpsCount=0,motionCount=0;
 
 async function wake(){
   try{
@@ -171,10 +202,12 @@ $('start').onclick=async()=>{
     startedMs=Date.now();
 
     ride={
-      version:'smoothroute-general-0.3',
+      version:'smoothroute-vehicle-profile-0.4',
       id:'ride-'+startedMs,
       collection_mode:'general_trip',
-      profile,
+      profile:'motorcycle',
+      vehicle:VEHICLE_PROFILE,
+      load_state:$('loadState').value,
       area:$('area').value,
       trip_label:$('tripLabel').value.trim()||null,
       started_at:new Date(startedMs).toISOString(),
@@ -234,7 +267,7 @@ $('stop').onclick=async()=>{
   const payload={ride,samples};
   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const area=ride.area.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase();
-  const name=`smoothroute-${profile}-${area}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+  const name=`smoothroute-2021-road-glide-special-${area}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
 
   exportFile=new File([blob],name,{type:'application/json'});
   const url=URL.createObjectURL(blob);
@@ -244,7 +277,9 @@ $('stop').onclick=async()=>{
   $('live').classList.add('hidden');
   $('done').classList.remove('hidden');
   $('summary').innerHTML=
-    `Vehicle: <b>${profile}</b><br>`+
+    `Vehicle: <b>2021 Harley-Davidson Road Glide Special</b><br>`+
+    `Suspension: <b>Modified Öhlins front & rear</b><br>`+
+    `Load: <b>${ride.load_state.replaceAll('_',' ')}</b><br>`+
     `Area: <b>${ride.area.replaceAll('_',' ')}</b><br>`+
     (ride.trip_label?`Trip: <b>${ride.trip_label}</b><br>`:'')+
     `Duration: <b>${elapsed(ride.duration_seconds*1000)}</b><br>`+
