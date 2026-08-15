@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>SmoothRoute Ride Analyzer</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;background:#0b1020;color:#fff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(#0b1020,#111827);padding:18px}
+main{max-width:850px;margin:auto}.brand{font-size:28px;font-weight:800}.sub{color:#aab4c8;margin:5px 0 18px}
+.card{background:#151d30;border:1px solid #25304a;border-radius:18px;padding:16px;margin:12px 0}
+button,.filebtn{display:inline-block;border:0;border-radius:14px;padding:14px 16px;font-size:16px;font-weight:700;background:#2563eb;color:#fff;cursor:pointer}
+input[type=file]{display:none}.muted{color:#94a3b8;font-size:13px;line-height:1.5}.ok{color:#86efac}.warn{color:#fde68a}.bad{color:#fca5a5}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.stat{background:#0f172a;border-radius:14px;padding:12px}.stat b{display:block;font-size:22px;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;border-bottom:1px solid #25304a;padding:9px 6px;vertical-align:top}th{color:#cbd5e1}
+.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#1f2937;margin:2px;font-size:12px}
+h2{font-size:19px;margin:2px 0 12px}.hidden{display:none!important}.footer{color:#64748b;text-align:center;font-size:12px;margin:18px 0}
+</style>
+</head>
+<body><main>
+<div class="brand">SmoothRoute Analyzer</div>
+<div class="sub">Local quality check and experimental 150 m road-surface windows</div>
+
+<div class="card">
+  <h2>Load ride files</h2>
+  <label class="filebtn" for="files">Choose JSON rides</label>
+  <input id="files" type="file" accept=".json,application/json" multiple>
+  <p class="muted">Your files stay on this device. This page does not upload ride data anywhere.</p>
+</div>
+
+<div id="results" class="hidden">
+  <div class="card">
+    <h2>Dataset</h2>
+    <div id="datasetStats" class="grid"></div>
+    <p id="datasetNote" class="muted"></p>
+  </div>
+
+  <div class="card">
+    <h2>Ride quality</h2>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>Ride</th><th>Profile</th><th>Duration</th><th>Distance</th><th>GPS</th><th>Motion</th><th>Median GPS acc.</th><th>Status</th></tr></thead>
+        <tbody id="rideRows"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Experimental 150 m windows</h2>
+    <p class="muted">“Roughness” is a relative vibration signal, not a validated safety rating. Compare repeated passes over the same road before drawing conclusions.</p>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>Ride</th><th>Window</th><th>Distance</th><th>Motion samples</th><th>Roughness</th><th>Peak vibration</th><th>GPS quality</th></tr></thead>
+        <tbody id="windowRows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="footer">SmoothRoute experimental field tooling · Validate signals before using them for rider-facing safety decisions.</div>
+
+<script>
+const $=id=>document.getElementById(id);
+
+function haversine(a,b){
+  const R=6371000, rad=Math.PI/180;
+  const p1=a.lat*rad,p2=b.lat*rad,dp=(b.lat-a.lat)*rad,dl=(b.lon-a.lon)*rad;
+  const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function fmtDuration(s){
+  s=Math.max(0,Math.round(s||0)); const m=Math.floor(s/60); return `${m}:${String(s%60).padStart(2,'0')}`;
+}
+function median(arr){
+  const a=arr.filter(Number.isFinite).sort((x,y)=>x-y);
+  if(!a.length)return null; const n=a.length; return n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2;
+}
+function percentile(arr,p){
+  const a=arr.filter(Number.isFinite).sort((x,y)=>x-y);
+  if(!a.length)return null; const i=(a.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);
+  return lo===hi?a[lo]:a[lo]*(hi-i)+a[hi]*(i-lo);
+}
+function magnitude(s){
+  if(![s.ax,s.ay,s.az].every(Number.isFinite))return null;
+  return Math.sqrt(s.ax*s.ax+s.ay*s.ay+s.az*s.az);
+}
+function qualityBadge(ride,gps,motion,medAcc,distance){
+  const duration=ride.duration_seconds||((Date.parse(ride.ended_at)-Date.parse(ride.started_at))/1000)||0;
+  const reasons=[];
+  if(gps.length<5)reasons.push('few GPS samples');
+  if(motion.length<50)reasons.push('few motion samples');
+  if(medAcc!=null&&medAcc>35)reasons.push('weak GPS accuracy');
+  if(duration<30)reasons.push('very short');
+  if(distance<100)reasons.push('little movement');
+  if(!reasons.length)return `<span class="ok">Good</span>`;
+  if(reasons.length<=2)return `<span class="warn">Check: ${reasons.join(', ')}</span>`;
+  return `<span class="bad">Poor: ${reasons.join(', ')}</span>`;
+}
+
+function analyzeRide(payload,fileName){
+  if(!payload||!payload.ride||!Array.isArray(payload.samples)) throw new Error(`${fileName}: not a SmoothRoute ride file`);
+  const ride=payload.ride;
+  const gps=payload.samples.filter(s=>s.type==='gps'&&Number.isFinite(s.lat)&&Number.isFinite(s.lon)).sort((a,b)=>a.ts-b.ts);
+  const motion=payload.samples.filter(s=>s.type==='motion').sort((a,b)=>a.ts-b.ts);
+
+  let distance=0;
+  for(let i=1;i<gps.length;i++){
+    const d=haversine(gps[i-1],gps[i]);
+    if(Number.isFinite(d)&&d<300) distance+=d; // reject implausible single GPS jumps
+  }
+  const medAcc=median(gps.map(g=>g.accuracy));
+
+  const windows=[];
+  if(gps.length>=2){
+    let cumulative=[0];
+    for(let i=1;i<gps.length;i++){
+      const d=haversine(gps[i-1],gps[i]);
+      cumulative[i]=cumulative[i-1]+((Number.isFinite(d)&&d<300)?d:0);
+    }
+    const total=cumulative[cumulative.length-1];
+    const n=Math.ceil(total/150);
+
+    for(let wi=0;wi<n;wi++){
+      const startD=wi*150,endD=Math.min((wi+1)*150,total);
+      const gpsIdx=[];
+      for(let i=0;i<cumulative.length;i++) if(cumulative[i]>=startD&&cumulative[i]<=endD) gpsIdx.push(i);
+      if(!gpsIdx.length) continue;
+
+      const t0=gps[gpsIdx[0]].ts, t1=gps[gpsIdx[gpsIdx.length-1]].ts;
+      const ms=motion.filter(s=>s.ts>=t0&&s.ts<=t1);
+      const mags=ms.map(magnitude).filter(Number.isFinite);
+      const base=median(mags);
+      const devs=base==null?[]:mags.map(v=>Math.abs(v-base));
+      const rms=devs.length?Math.sqrt(devs.reduce((sum,v)=>sum+v*v,0)/devs.length):null;
+      const peak=percentile(devs,0.95);
+      const acc=median(gpsIdx.map(i=>gps[i].accuracy));
+      windows.push({
+        index:wi+1,
+        distance:endD-startD,
+        motionSamples:ms.length,
+        roughness:rms,
+        peak,
+        gpsAcc:acc
+      });
+    }
+  }
+
+  return {fileName,ride,gps,motion,distance,medAcc,windows};
+}
+
+function stat(label,value){
+  return `<div class="stat">${label}<b>${value}</b></div>`;
+}
+
+$('files').addEventListener('change',async e=>{
+  const files=[...e.target.files];
+  if(!files.length)return;
+
+  const analyses=[],errors=[];
+  for(const f of files){
+    try{
+      const text=await f.text();
+      analyses.push(analyzeRide(JSON.parse(text),f.name));
+    }catch(err){errors.push(err.message||String(err));}
+  }
+
+  $('results').classList.remove('hidden');
+  const totalDistance=analyses.reduce((s,r)=>s+r.distance,0);
+  const totalGps=analyses.reduce((s,r)=>s+r.gps.length,0);
+  const totalMotion=analyses.reduce((s,r)=>s+r.motion.length,0);
+  const good=analyses.filter(r=>!qualityBadge(r.ride,r.gps,r.motion,r.medAcc,r.distance).includes('warn')&&!qualityBadge(r.ride,r.gps,r.motion,r.medAcc,r.distance).includes('bad')).length;
+
+  $('datasetStats').innerHTML=
+    stat('Ride files',analyses.length)+
+    stat('Distance',(totalDistance/1609.344).toFixed(1)+' mi')+
+    stat('GPS samples',totalGps.toLocaleString())+
+    stat('Motion samples',totalMotion.toLocaleString())+
+    stat('Good rides',`${good}/${analyses.length}`);
+
+  $('datasetNote').innerHTML=errors.length?`<span class="bad">${errors.join('<br>')}</span>`:'All selected files parsed successfully.';
+
+  $('rideRows').innerHTML=analyses.map(r=>{
+    const duration=r.ride.duration_seconds||((Date.parse(r.ride.ended_at)-Date.parse(r.ride.started_at))/1000)||0;
+    return `<tr>
+      <td>${r.fileName}</td>
+      <td>${r.ride.profile||'—'}<br><span class="pill">${r.ride.direction||'—'}</span></td>
+      <td>${fmtDuration(duration)}</td>
+      <td>${(r.distance/1609.344).toFixed(2)} mi</td>
+      <td>${r.gps.length.toLocaleString()}</td>
+      <td>${r.motion.length.toLocaleString()}</td>
+      <td>${r.medAcc==null?'—':Math.round(r.medAcc)+' m'}</td>
+      <td>${qualityBadge(r.ride,r.gps,r.motion,r.medAcc,r.distance)}</td>
+    </tr>`;
+  }).join('');
+
+  $('windowRows').innerHTML=analyses.flatMap(r=>r.windows.map(w=>`<tr>
+    <td>${r.fileName}</td>
+    <td>${w.index}</td>
+    <td>${Math.round(w.distance)} m</td>
+    <td>${w.motionSamples.toLocaleString()}</td>
+    <td>${w.roughness==null?'—':w.roughness.toFixed(3)}</td>
+    <td>${w.peak==null?'—':w.peak.toFixed(3)}</td>
+    <td>${w.gpsAcc==null?'—':Math.round(w.gpsAcc)+' m'}</td>
+  </tr>`)).join('');
+});
+</script>
+</main></body>
+</html>
