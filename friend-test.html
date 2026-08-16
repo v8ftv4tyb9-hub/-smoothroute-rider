@@ -24,7 +24,7 @@ button.sel{background:#2563eb}button.start{background:#16a34a;font-size:20px;pad
 </head>
 <body><main>
 <div class="brand">SmoothRoute Road Test Beta</div>
-<div class="sub">Bay Area road-surface data collection · recovery build 0.4</div>
+<div class="sub">Bay Area road-surface data collection · recovery build 0.5</div>
 
 <div id="recovery" class="card hidden">
   <div class="notice warnbox">
@@ -290,16 +290,19 @@ $('start').onclick=async()=>{
     $('start').disabled=true;$('start').textContent='Requesting permissions…';if(!navigator.geolocation)throw new Error('Location is not available on this device.');
     const ok=await motionPermission();if(!ok)throw new Error('Motion permission was not granted.');
     await clearSaved(); samples=[];pending=[];latestGps=null;gpsCount=0;motionCount=0;lastMotion=0;lastSampleWall=0;recoveryCount=0;startedMs=Date.now();
-    ride={version:'smoothroute-road-test-0.4',id:'roadtest-'+startedMs,collection_mode:'road_test_beta',profile,vehicle:profile==='my_road_glide'?PERSONAL_BIKE:null,area:$('area').value,trip_label:$('tripLabel').value.trim()||null,tester:$('tester').value.trim()||null,started_at:new Date(startedMs).toISOString(),interruption_count:0,recovery_count:0,persistence:'indexeddb-chunked'};
+    ride={version:'smoothroute-road-test-0.5',id:'roadtest-'+startedMs,collection_mode:'road_test_beta',profile,vehicle:profile==='my_road_glide'?PERSONAL_BIKE:null,area:$('area').value,trip_label:$('tripLabel').value.trim()||null,tester:$('tester').value.trim()||null,started_at:new Date(startedMs).toISOString(),interruption_count:0,recovery_count:0,persistence:'indexeddb-chunked'};
     await beginRecording();
   }catch(e){ride=null;alert(e.message||String(e));$('start').disabled=false;$('start').textContent='Start Road Test';}
 };
 
 $('resume').onclick=async()=>{
   try{
-    $('resume').disabled=true;$('resume').textContent='Restoring ride…';
-    const saved=await loadSaved();if(!saved?.state?.ride)throw new Error('No saved ride is available.');
+    $('resume').disabled=true;$('resume').textContent='Requesting motion access…';
+    // iOS requires DeviceMotionEvent.requestPermission() to run directly from this tap.
+    // Do not await IndexedDB, timers, or other async recovery work before this call.
     const ok=await motionPermission();if(!ok)throw new Error('Motion permission was not granted.');
+    $('resume').textContent='Restoring ride…';
+    const saved=await loadSaved();if(!saved?.state?.ride)throw new Error('No saved ride is available.');
     ride=saved.state.ride;profile=ride.profile||'car';samples=saved.samples||[];pending=[];latestGps=saved.state.latestGps||null;gpsCount=saved.state.gpsCount||samples.filter(x=>x.type==='gps').length;motionCount=saved.state.motionCount||samples.filter(x=>x.type==='motion').length;lastMotion=0;startedMs=saved.state.startedMs||Date.parse(ride.started_at)||Date.now();lastSampleWall=saved.state.lastSampleWall||0;recoveryCount=(saved.state.recoveryCount||0)+1;ride.recovery_count=recoveryCount;ride.last_recovered_at=new Date().toISOString();syncProfileUi();
     addSystem('ride_resumed',{recovery_count:recoveryCount});await beginRecording();
   }catch(e){alert(e.message||String(e));$('resume').disabled=false;$('resume').textContent='Resume Saved Ride';}
