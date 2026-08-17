@@ -18,6 +18,19 @@ targets:
       - path: SmoothRoute
     info:
       path: SmoothRoute/Info.plist
+      properties:
+        CFBundleDisplayName: SmoothRoute
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UIBackgroundModes:
+          - location
+        NSLocationWhenInUseUsageDescription: SmoothRoute uses your location to record the route, speed, and road-surface context of a ride.
+        NSLocationAlwaysAndWhenInUseUsageDescription: SmoothRoute uses background location to continue recording your ride while the screen is locked or a navigation app is visible.
+        NSMotionUsageDescription: SmoothRoute uses phone motion during an active ride to identify road-surface conditions and riding hazards.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        ITSAppUsesNonExemptEncryption: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.smoothroute.rider
