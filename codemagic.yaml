@@ -35,7 +35,7 @@ workflows:
           xcodebuild test \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
-            -destination 'platform=macOS,arch=arm64,variant=Designed for [iPad,iPhone]'
+            -destination 'platform=macOS,arch=arm64'
       - name: Build signed IPA
         script: |
           xcode-project build-ipa \
