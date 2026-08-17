@@ -27,6 +27,10 @@ workflows:
         script: |
           cd ios
           xcodegen generate
+      - name: Set unique build number
+        script: |
+          cd ios
+          xcrun agvtool new-version -all "$BUILD_NUMBER"
       - name: Apply provisioning profile
         script: |
           xcode-project use-profiles
@@ -48,5 +52,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        beta_groups:
-          - Internal Testers
