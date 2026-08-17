@@ -34,12 +34,14 @@ workflows:
       - name: Apply provisioning profile
         script: |
           xcode-project use-profiles
-      - name: Run unit tests
+      - name: Compile app and unit-test bundle
         script: |
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
-            -destination 'platform=macOS,arch=arm64'
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
       - name: Build signed IPA
         script: |
           xcode-project build-ipa \
