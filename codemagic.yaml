@@ -7,6 +7,11 @@ workflows:
       app_store_connect: smoothroute_app_store_connect
     environment:
       xcode: latest
+      ios_signing:
+        certificates:
+          - smoothroute_distribution
+        provisioning_profiles:
+          - smoothroute_app_store_profile
       vars:
         BUNDLE_ID: com.smoothroute.rider
         XCODE_PROJECT: ios/SmoothRoute.xcodeproj
@@ -22,18 +27,7 @@ workflows:
         script: |
           cd ios
           xcodegen generate
-      - name: Initialize signing keychain
-        script: |
-          keychain initialize
-      - name: Fetch or create signing files
-        script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-      - name: Add signing certificate
-        script: |
-          keychain add-certificates
-      - name: Apply provisioning profiles
+      - name: Apply provisioning profile
         script: |
           xcode-project use-profiles
       - name: Run unit tests
