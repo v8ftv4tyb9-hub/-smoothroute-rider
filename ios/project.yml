@@ -24,6 +24,7 @@ targets:
         PRODUCT_NAME: SmoothRoute
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: false
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   SmoothRouteTests:
     type: bundle.unit-test
     platform: iOS
