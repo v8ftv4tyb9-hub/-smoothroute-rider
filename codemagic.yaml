@@ -35,8 +35,7 @@ workflows:
           xcodebuild test \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
-            -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+            -destination 'platform=macOS,arch=arm64,variant=Designed for [iPad,iPhone]'
       - name: Build signed IPA
         script: |
           xcode-project build-ipa \
