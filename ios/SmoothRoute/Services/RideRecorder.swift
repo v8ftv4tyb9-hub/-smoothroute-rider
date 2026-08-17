@@ -19,7 +19,7 @@ final class RideRecorder: NSObject, ObservableObject {
     @Published private(set) var elapsedSeconds = 0
     @Published private(set) var latestAccuracy: Double?
     @Published private(set) var latestSpeedMph: Double?
-    @Published private(set) var authorizationStatus: CLAuthorizationStatus
+    @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published private(set) var statusMessage = "Ready"
     @Published private(set) var exportURL: URL?
     @Published var errorMessage: String?
@@ -42,8 +42,8 @@ final class RideRecorder: NSObject, ObservableObject {
 
     override init() {
         store = RideStore()
-        authorizationStatus = locationManager.authorizationStatus
         super.init()
+        authorizationStatus = locationManager.authorizationStatus
 
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
