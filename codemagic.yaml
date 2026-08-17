@@ -7,10 +7,8 @@ workflows:
       app_store_connect: smoothroute_app_store_connect
     environment:
       xcode: latest
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.smoothroute.rider
       vars:
+        BUNDLE_ID: com.smoothroute.rider
         XCODE_PROJECT: ios/SmoothRoute.xcodeproj
         XCODE_SCHEME: SmoothRoute
     cache:
@@ -24,18 +22,32 @@ workflows:
         script: |
           cd ios
           xcodegen generate
-      - name: Fetch signing files
+      - name: Initialize signing keychain
         script: |
-          app-store-connect fetch-signing-files             "$BUNDLE_ID"             --type IOS_APP_STORE             --create
+          keychain initialize
+      - name: Fetch or create signing files
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Add signing certificate
+        script: |
+          keychain add-certificates
       - name: Apply provisioning profiles
         script: |
           xcode-project use-profiles
       - name: Run unit tests
         script: |
-          xcodebuild test             -project "$XCODE_PROJECT"             -scheme "$XCODE_SCHEME"             -sdk iphonesimulator             -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+          xcodebuild test \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
       - name: Build signed IPA
         script: |
-          xcode-project build-ipa             --project "$XCODE_PROJECT"             --scheme "$XCODE_SCHEME"
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
       - $HOME/Library/Developer/Xcode/DerivedData/**/Logs/Test/*.xcresult
