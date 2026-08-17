@@ -1,0 +1,5 @@
+SmoothRoute.xcodeproj/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/

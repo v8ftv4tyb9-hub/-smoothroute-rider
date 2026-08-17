@@ -1,0 +1,55 @@
+workflows:
+  smoothroute-ios:
+    name: SmoothRoute Native iOS
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: smoothroute_app_store_connect
+    environment:
+      xcode: latest
+      ios_signing:
+        certificates:
+          - smoothroute_distribution
+        provisioning_profiles:
+          - smoothroute_app_store_profile
+      vars:
+        BUNDLE_ID: com.smoothroute.rider
+        XCODE_PROJECT: ios/SmoothRoute.xcodeproj
+        XCODE_SCHEME: SmoothRoute
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/Homebrew
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+      - name: Generate Xcode project
+        script: |
+          cd ios
+          xcodegen generate
+      - name: Set unique build number
+        script: |
+          cd ios
+          xcrun agvtool new-version -all "$BUILD_NUMBER"
+      - name: Apply provisioning profile
+        script: |
+          xcode-project use-profiles
+      - name: Compile app and unit-test bundle
+        script: |
+          xcodebuild build-for-testing \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Build signed IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Logs/Test/*.xcresult
+    publishing:
+      app_store_connect:
+        auth: integration
